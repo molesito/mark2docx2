@@ -30,12 +30,23 @@ app.post(
       blockMap[match[1]] = match[2]; // Guardamos XML crudo
     }
 
-    // Reemplazar en output
-    let mergedXml = outputXml;
-    for (const [id, fragment] of Object.entries(blockMap)) {
-      const placeholder = `[{${id}}]`;
-      mergedXml = mergedXml.replace(placeholder, fragment);
-    }
+   // Reemplazar en output (con control de espacios)
+let mergedXml = outputXml;
+for (const [id, fragment] of Object.entries(blockMap)) {
+  const placeholder = `[{${id}}]`;
+  const regex = new RegExp(placeholder, "g");
+
+  mergedXml = mergedXml.replace(regex, (match, offset) => {
+    const before = mergedXml[offset - 1] || "";
+    const after = mergedXml[offset + match.length] || "";
+
+    const addBefore = before !== " " && before !== "\n" ? " " : "";
+    const addAfter = after !== " " && after !== "\n" ? " " : "";
+
+    return `${addBefore}${fragment}${addAfter}`;
+  });
+}
+
 
     // Crear nuevo docx
     const mergedZip = new AdmZip();
@@ -59,3 +70,4 @@ app.post(
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
