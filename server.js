@@ -30,7 +30,7 @@ app.post(
       blockMap[match[1]] = match[2]; // Guardamos XML crudo
     }
 
-   // Reemplazar en output (con control de espacios)
+   // Reemplazar en output (con runs de espacio válidos)
 let mergedXml = outputXml;
 for (const [id, fragment] of Object.entries(blockMap)) {
   const placeholder = `[{${id}}]`;
@@ -40,8 +40,11 @@ for (const [id, fragment] of Object.entries(blockMap)) {
     const before = mergedXml[offset - 1] || "";
     const after = mergedXml[offset + match.length] || "";
 
-    const addBefore = before !== " " && before !== "\n" ? " " : "";
-    const addAfter = after !== " " && after !== "\n" ? " " : "";
+    // Run XML de un espacio
+    const spaceRun = '<w:r><w:t xml:space="preserve"> </w:t></w:r>';
+
+    const addBefore = before !== " " && before !== "\n" ? spaceRun : "";
+    const addAfter = after !== " " && after !== "\n" ? spaceRun : "";
 
     return `${addBefore}${fragment}${addAfter}`;
   });
@@ -70,4 +73,5 @@ for (const [id, fragment] of Object.entries(blockMap)) {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
