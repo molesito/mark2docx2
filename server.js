@@ -15,82 +15,47 @@ app.post(
       return res.status(400).json({ error: "Missing files" });
     }
 
-    try {
-      const formulasZip = new AdmZip(req.files["formulas"][0].buffer);
-      const outputZip = new AdmZip(req.files["output"][0].buffer);
+    const formulasZip = new AdmZip(req.files["formulas"][0].buffer);
+    const outputZip = new AdmZip(req.files["output"][0].buffer);
 
-      // Leer XML
-      const formulasXml = formulasZip.readAsText("word/document.xml");
-      const outputXml = outputZip.readAsText("word/document.xml");
+    // Leer XML
+    const formulasXml = formulasZip.readAsText("word/document.xml");
+    const outputXml = outputZip.readAsText("word/document.xml");
 
-      // 1) Construir mapa [{x}] ... [{x}]
-      const blockMap = {};
-      const regex = /\[\{(\d+)\}\]([\s\S]*?)\[\{\1\}\]/g;
-      let match;
-      while ((match = regex.exec(formulasXml)) !== null) {
-        blockMap[match[1]] = match[2]; // Guardamos XML crudo
-      }
-
-      // 2) Reemplazar en output con control de espacios
-      let mergedXml = outputXml;
-      for (const [id, fragment] of Object.entries(blockMap)) {
-        const placeholder = `[{${id}}]`;
-        const regexPlaceholder = new RegExp(escapeRegex(placeholder), "g");
-
-        mergedXml = mergedXml.replace(regexPlaceholder, (match, offset, full) => {
-          const before = full[offset - 1] || "";
-          const after = full[offset + match.length] || "";
-
-          let result = fragment;
-
-          // Añadir espacio antes si está pegado a algo
-          if (before && before !== " " && before !== "\n") {
-            result = " " + result;
-          }
-
-          // Añadir espacio después si está pegado a algo
-          if (after && after !== " " && after !== "\n") {
-            result = result + " ";
-          }
-
-          return result;
-        });
-      }
-
-      // 3) Forzar que Word preserve espacios
-      mergedXml = mergedXml.replace(
-        /<w:t(?![^>]*xml:space)/g,
-        '<w:t xml:space="preserve"'
-      );
-
-      // 4) Reempaquetar DOCX
-      const mergedZip = new AdmZip();
-      for (const entry of outputZip.getEntries()) {
-        if (entry.entryName === "word/document.xml") {
-          mergedZip.addFile(entry.entryName, Buffer.from(mergedXml, "utf8"));
-        } else {
-          mergedZip.addFile(entry.entryName, entry.getData());
-        }
-      }
-
-      const filename = req.body.filename || "merged.docx";
-      res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      );
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(mergedZip.toBuffer());
-    } catch (err) {
-      console.error("Merge error:", err);
-      return res.status(500).json({ error: "Failed to merge documents" });
+    // Construir mapa [{x}]...[{x}]
+    const blockMap = {};
+    const regex = /\[\{(\d+)\}\]([\s\S]*?)\[\{\1\}\]/g;
+    let match;
+    while ((match = regex.exec(formulasXml)) !== null) {
+      blockMap[match[1]] = match[2]; // Guardamos XML crudo
     }
+
+    // Reemplazar en output
+    let mergedXml = outputXml;
+    for (const [id, fragment] of Object.entries(blockMap)) {
+      const placeholder = `[{${id}}]`;
+      mergedXml = mergedXml.replace(placeholder, fragment);
+    }
+
+    // Crear nuevo docx
+    const mergedZip = new AdmZip();
+    for (const entry of outputZip.getEntries()) {
+      if (entry.entryName === "word/document.xml") {
+        mergedZip.addFile(entry.entryName, Buffer.from(mergedXml, "utf8"));
+      } else {
+        mergedZip.addFile(entry.entryName, entry.getData());
+      }
+    }
+
+    const filename = req.body.filename || "merged.docx";
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(mergedZip.toBuffer());
   }
 );
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Helper para escapar caracteres especiales en el placeholder
-function escapeRegex(string) {
-  return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-}
