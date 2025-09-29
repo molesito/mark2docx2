@@ -37,12 +37,6 @@ app.post(
       mergedXml = mergedXml.replace(placeholder, fragment);
     }
 
-    // 🔑 Fix: forzar que Word preserve espacios
-    mergedXml = mergedXml.replace(
-      /<w:t(?![^>]*xml:space)/g,
-      '<w:t xml:space="preserve"'
-    );
-
     // Crear nuevo docx
     const mergedZip = new AdmZip();
     for (const entry of outputZip.getEntries()) {
