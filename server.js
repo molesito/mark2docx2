@@ -18,32 +18,46 @@ app.post(
     const formulasZip = new AdmZip(req.files["formulas"][0].buffer);
     const outputZip = new AdmZip(req.files["output"][0].buffer);
 
-    // Leer XML
+    // Leer XML de ambos DOCX
     const formulasXml = formulasZip.readAsText("word/document.xml");
-    const outputXml = outputZip.readAsText("word/document.xml");
+    let mergedXml = outputZip.readAsText("word/document.xml");
 
-    // Construir mapa [{x}]...[{x}]
+    // 1) Construir mapa a partir de [{id}] ... [{id}] en formulasXml
     const blockMap = {};
     const regex = /\[\{(\d+)\}\]([\s\S]*?)\[\{\1\}\]/g;
     let match;
     while ((match = regex.exec(formulasXml)) !== null) {
-      blockMap[match[1]] = match[2]; // Guardamos XML crudo
+      blockMap[match[1]] = match[2]; // fragmento XML crudo
     }
 
-    // Reemplazar en output
-    let mergedXml = outputXml;
+    // 2) Reemplazar placeholders en el documento de salida
     for (const [id, fragment] of Object.entries(blockMap)) {
       const placeholder = `[{${id}}]`;
       mergedXml = mergedXml.replace(placeholder, fragment);
     }
 
-    // 🔑 Fix: forzar que Word preserve espacios
-    mergedXml = mergedXml.replace(
-      /<w:t(?![^>]*xml:space)/g,
-      '<w:t xml:space="preserve"'
+    // 3) Asegurar que Word preserva espacios:
+    //    - Añadir xml:space="preserve" a TODOS los <w:t> que no lo tengan
+    mergedXml = mergedXml.replace(/<w:t(\s[^>]*)?>/g, (m) =>
+      m.includes("xml:space=")
+        ? m
+        : m.replace("<w:t", '<w:t xml:space="preserve"')
     );
 
-    // Crear nuevo docx
+    // 4) Evitar corrupción: si no existe la namespace 'xml', declararla en <w:document ...>
+    //    (necesaria para que 'xml:space' sea válido)
+    mergedXml = mergedXml.replace(/<w:document\b([^>]*)>/, (full, attrs) => {
+      if (/xmlns:xml=/.test(attrs)) return full;
+      return `<w:document${attrs} xmlns:xml="http://www.w3.org/XML/1998/namespace">`;
+    });
+
+    // 5) (Opcional) Auto-espaciado suave:
+    //    Si algún bloque quedó pegado a letras, añade un espacio visual alrededor
+    //    Solo si lo necesitas, descomenta estas dos líneas:
+    // mergedXml = mergedXml.replace(/([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ])<w:t/g, "$1 <w:t");
+    // mergedXml = mergedXml.replace(/<\/w:t>([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ])/g, "</w:t> $1");
+
+    // 6) Reconstruir el DOCX
     const mergedZip = new AdmZip();
     for (const entry of outputZip.getEntries()) {
       if (entry.entryName === "word/document.xml") {
